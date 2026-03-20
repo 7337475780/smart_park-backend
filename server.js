@@ -249,7 +249,7 @@ app.post('/api/analyze-parking', upload.single('image'), async (req, res) => {
         if (!req.file) return res.status(400).json({ error: 'No image provided' });
         if (!process.env.GEMINI_API_KEY) return res.status(500).json({ error: 'GEMINI_API_KEY missing.' });
 
-        const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+        const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash-latest' });
 
         // Convert multer file buffer to base64
         const base64Image = req.file.buffer.toString('base64');
