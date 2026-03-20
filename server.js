@@ -36,6 +36,18 @@ const upload = multer({ storage: storage });
 // Initialize Gemini
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
+// Diagnostic: List available models
+async function listModels() {
+  try {
+    const models = await genAI.listModels();
+    console.log('Available Models for this API Key:');
+    models.models.forEach(m => console.log(` - ${m.name} (${m.supportedGenerationMethods})`));
+  } catch (e) {
+    console.error('Error listing models:', e.message);
+  }
+}
+listModels();
+
 // Connect to MongoDB
 mongoose.connect(process.env.MONGO_URI)
     .then(async () => {
