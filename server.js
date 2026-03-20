@@ -241,8 +241,12 @@ app.post('/api/analyze-parking', upload.single('image'), async (req, res) => {
         // Convert multer file buffer to base64
         const base64Image = req.file.buffer.toString('base64');
 
+        // Ensure the directory exists
+        const uploadDir = path.join(__dirname, 'uploads');
+        if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
+
         // Save the latest image to disk for testing/preview
-        const uploadPath = path.join(__dirname, 'uploads', 'latest.jpg');
+        const uploadPath = path.join(uploadDir, 'latest.jpg');
         fs.writeFileSync(uploadPath, req.file.buffer);
 
         // We send a much more strict prompt expecting slot mappings
