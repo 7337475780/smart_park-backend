@@ -244,7 +244,12 @@ app.post('/api/users/:id/role', checkDb, async (req, res) => {
 
 // --- GEMINI ENDPOINT ---
 
+app.get('/api/analyze-parking', (req, res) => {
+    res.json({ status: 'API Route /api/analyze-parking is ALIVE (GET)', method: 'POST required for analysis' });
+});
+
 app.post('/api/analyze-parking', upload.single('image'), async (req, res) => {
+    console.log('--- Analyze POST Request Received ---');
     try {
         if (!req.file) return res.status(400).json({ error: 'No image provided' });
         if (!process.env.GEMINI_API_KEY) return res.status(500).json({ error: 'GEMINI_API_KEY missing.' });
