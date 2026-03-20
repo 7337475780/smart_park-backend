@@ -11,6 +11,19 @@ const { ParkingSlot, ActivityLog, Settings, User } = require('./models');
 const app = express();
 const port = process.env.PORT || 5000;
 
+// Ensure uploads directory exists at startup
+const uploadDir = path.join(__dirname, 'uploads');
+try {
+  if (!fs.existsSync(uploadDir)) {
+    fs.mkdirSync(uploadDir, { recursive: true });
+    console.log('Created uploads directory at:', uploadDir);
+  } else {
+    console.log('Uploads directory already exists at:', uploadDir);
+  }
+} catch (e) {
+  console.error('Error creating uploads directory:', e);
+}
+
 // Middleware
 app.use(cors());
 app.use(express.json());
@@ -240,10 +253,6 @@ app.post('/api/analyze-parking', upload.single('image'), async (req, res) => {
 
         // Convert multer file buffer to base64
         const base64Image = req.file.buffer.toString('base64');
-
-        // Ensure the directory exists
-        const uploadDir = path.join(__dirname, 'uploads');
-        if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
 
         // Save the latest image to disk for testing/preview
         const uploadPath = path.join(uploadDir, 'latest.jpg');
