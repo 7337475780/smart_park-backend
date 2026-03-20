@@ -34,7 +34,9 @@ const storage = multer.memoryStorage();
 const upload = multer({ storage: storage });
 
 // Initialize Gemini
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+const apiKey = (process.env.GEMINI_API_KEY || '').trim();
+if (apiKey) console.log(`Gemini API Key loaded (Length: ${apiKey.length})`);
+const genAI = new GoogleGenerativeAI(apiKey);
 
 // Connect to MongoDB
 mongoose.connect(process.env.MONGO_URI)
@@ -273,7 +275,14 @@ app.post('/api/analyze-parking', upload.single('image'), async (req, res) => {
     `;
 
         // Try multiple model variants in case of 404 or regional unavailability
-        const modelVariants = ['gemini-2.0-flash-exp', 'gemini-1.5-flash', 'gemini-1.5-flash-latest', 'gemini-1.5-pro'];
+        const modelVariants = [
+            'gemini-2.0-flash-exp', 
+            'gemini-1.5-flash', 
+            'gemini-1.5-flash-latest', 
+            'gemini-1.5-pro',
+            'gemini-pro-vision',
+            'gemini-1.0-pro-vision-latest'
+        ];
         let lastError = null;
         let responseText = null;
 
