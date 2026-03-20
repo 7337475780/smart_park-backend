@@ -266,16 +266,11 @@ app.post('/api/analyze-parking', upload.single('image'), async (req, res) => {
         if (!req.file) return res.status(400).json({ error: 'No image provided' });
         if (!process.env.GEMINI_API_KEY) return res.status(500).json({ error: 'GEMINI_API_KEY missing.' });
 
-        const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash-latest' });
-
         // Convert multer file buffer to base64
         const base64Image = req.file.buffer.toString('base64');
-
-        // Save the latest image to disk for testing/preview
         const uploadPath = path.join(uploadDir, 'latest.jpg');
         fs.writeFileSync(uploadPath, req.file.buffer);
 
-        // We send a much more strict prompt expecting slot mappings
         const prompt = `
       Analyze this image from an AI Smart Parking camera viewing a parking slot.
       The environment is a smart parking demo using actual vehicles or cardboard car cutouts.
@@ -289,17 +284,39 @@ app.post('/api/analyze-parking', upload.single('image'), async (req, res) => {
       Example: {"carDetected": true, "licensePlate": "AB1234", "parkingStatus": "good", "suggestedSlotId": "A1"}
     `;
 
-        const result = await model.generateContent([{ inlineData: { data: base64Image, mimeType: req.file.mimetype } }, prompt]);
-        const response = await result.response;
-        const text = await response.text();
-        console.log('Gemini raw response:', text);
+        // Try multiple model variants in case of 404
+        const modelVariants = ['gemini-1.5-flash', 'gemini-1.5-flash-latest', 'gemini-pro-vision'];
+        let lastError = null;
+        let responseText = null;
+
+        for (const modelId of modelVariants) {
+            try {
+                console.log(`Trying model: ${modelId}...`);
+                const model = genAI.getGenerativeModel({ model: modelId });
+                const result = await model.generateContent([{ inlineData: { data: base64Image, mimeType: req.file.mimetype } }, prompt]);
+                const response = await result.response;
+                responseText = await response.text();
+                if (responseText) {
+                    console.log(`Success with model: ${modelId}`);
+                    break;
+                }
+            } catch (err) {
+                lastError = err;
+                console.warn(`Model ${modelId} failed:`, err.message);
+                if (!err.message.includes('404')) break; // Stop if not a 404 (e.g. rate limit or safety)
+            }
+        }
+
+        if (!responseText) throw lastError || new Error('All models failed');
+
+        console.log('Gemini raw response:', responseText);
         
         let analysis;
         try {
-            const cleanJson = text.replace(/```json\n?/, '').replace(/```\n?/, '').trim();
+            const cleanJson = responseText.replace(/```json\n?/, '').replace(/```\n?/, '').trim();
             analysis = JSON.parse(cleanJson);
         } catch (parseError) {
-            console.error('Failed to parse Gemini JSON:', text);
+            console.error('Failed to parse Gemini JSON:', responseText);
             throw new Error(`Invalid AI response format: ${parseError.message}`);
         }
 
