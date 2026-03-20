@@ -36,18 +36,6 @@ const upload = multer({ storage: storage });
 // Initialize Gemini
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
-// Diagnostic: List available models
-async function listModels() {
-  try {
-    const models = await genAI.listModels();
-    console.log('Available Models for this API Key:');
-    models.models.forEach(m => console.log(` - ${m.name} (${m.supportedGenerationMethods})`));
-  } catch (e) {
-    console.error('Error listing models:', e.message);
-  }
-}
-listModels();
-
 // Connect to MongoDB
 mongoose.connect(process.env.MONGO_URI)
     .then(async () => {
@@ -284,8 +272,8 @@ app.post('/api/analyze-parking', upload.single('image'), async (req, res) => {
       Example: {"carDetected": true, "licensePlate": "AB1234", "parkingStatus": "good", "suggestedSlotId": "A1"}
     `;
 
-        // Try multiple model variants in case of 404
-        const modelVariants = ['gemini-1.5-flash', 'gemini-1.5-flash-latest', 'gemini-pro-vision'];
+        // Try multiple model variants in case of 404 or regional unavailability
+        const modelVariants = ['gemini-2.0-flash-exp', 'gemini-1.5-flash', 'gemini-1.5-flash-latest', 'gemini-1.5-pro'];
         let lastError = null;
         let responseText = null;
 
@@ -302,12 +290,15 @@ app.post('/api/analyze-parking', upload.single('image'), async (req, res) => {
                 }
             } catch (err) {
                 lastError = err;
-                console.warn(`Model ${modelId} failed:`, err.message);
-                if (!err.message.includes('404')) break; // Stop if not a 404 (e.g. rate limit or safety)
+                console.warn(`Model ${modelId} failed: ${err.message}`);
+                // We don't break here any more, we try all of them to be 100% sure
             }
         }
 
-        if (!responseText) throw lastError || new Error('All models failed');
+        if (!responseText) {
+            console.error('CRITICAL: ALL MODELS FAILED');
+            throw lastError || new Error('All Gemini models returned failure.');
+        }
 
         console.log('Gemini raw response:', responseText);
         
