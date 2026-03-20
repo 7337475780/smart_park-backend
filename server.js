@@ -274,9 +274,17 @@ app.post('/api/analyze-parking', upload.single('image'), async (req, res) => {
 
         const result = await model.generateContent([{ inlineData: { data: base64Image, mimeType: req.file.mimetype } }, prompt]);
         const response = await result.response;
-        const text = response.text();
-        const cleanJson = text.replace(/```json\n?/, '').replace(/```\n?/, '').trim();
-        const analysis = JSON.parse(cleanJson);
+        const text = await response.text();
+        console.log('Gemini raw response:', text);
+        
+        let analysis;
+        try {
+            const cleanJson = text.replace(/```json\n?/, '').replace(/```\n?/, '').trim();
+            analysis = JSON.parse(cleanJson);
+        } catch (parseError) {
+            console.error('Failed to parse Gemini JSON:', text);
+            throw new Error(`Invalid AI response format: ${parseError.message}`);
+        }
 
         if (mongoose.connection.readyState === 1) {
             const targetSlot = analysis.suggestedSlotId || 'A1';
