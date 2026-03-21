@@ -227,6 +227,20 @@ app.post('/api/settings', checkDb, async (req, res) => {
 
 // --- AUTH & USER ENDPOINTS ---
 
+app.delete('/api/users/:id', checkDb, async (req, res) => {
+    try {
+        const { id } = req.params;
+        const user = await User.findById(id);
+        if (!user) return res.status(404).json({ error: 'User not found' });
+        if (user.username === 'admin') return res.status(403).json({ error: 'Default admin cannot be deleted' });
+
+        await User.findByIdAndDelete(id);
+        res.json({ message: 'User deleted successfully' });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 app.post('/api/register', checkDb, async (req, res) => {
     try {
         const { username, password } = req.body;
@@ -279,19 +293,6 @@ app.post('/api/users/:id/role', checkDb, async (req, res) => {
     }
 });
 
-app.delete('/api/users/:id', checkDb, async (req, res) => {
-    try {
-        const { id } = req.params;
-        const user = await User.findById(id);
-        if (!user) return res.status(404).json({ error: 'User not found' });
-        if (user.username === 'admin') return res.status(403).json({ error: 'Default admin cannot be deleted' });
-
-        await User.findByIdAndDelete(id);
-        res.json({ message: 'User deleted successfully' });
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
-});
 
 
 // --- GEMINI ENDPOINT ---
