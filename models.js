@@ -5,7 +5,8 @@ const parkingSlotSchema = new mongoose.Schema({
   status: { type: String, enum: ['available', 'occupied', 'booked', 'fined'], default: 'available' },
   plateNumber: { type: String, default: null },
   entryTime: { type: Date, default: null },
-  bookingTime: { type: Date, default: null }
+  bookingTime: { type: Date, default: null },
+  bookingDuration: { type: Number, default: 0 }
 });
 
 const ActivityLogSchema = new mongoose.Schema({

@@ -14,14 +14,14 @@ const port = process.env.PORT || 5000;
 // Ensure uploads directory exists at startup
 const uploadDir = path.join(__dirname, 'uploads');
 try {
-  if (!fs.existsSync(uploadDir)) {
-    fs.mkdirSync(uploadDir, { recursive: true });
-    console.log('Created uploads directory at:', uploadDir);
-  } else {
-    console.log('Uploads directory already exists at:', uploadDir);
-  }
+    if (!fs.existsSync(uploadDir)) {
+        fs.mkdirSync(uploadDir, { recursive: true });
+        console.log('Created uploads directory at:', uploadDir);
+    } else {
+        console.log('Uploads directory already exists at:', uploadDir);
+    }
 } catch (e) {
-  console.error('Error creating uploads directory:', e);
+    console.error('Error creating uploads directory:', e);
 }
 
 // Middleware
@@ -134,6 +134,16 @@ app.post('/api/logs', checkDb, async (req, res) => {
         const log = new ActivityLog(req.body);
         await log.save();
         res.json(log);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Clear all logs
+app.delete('/api/logs', checkDb, async (req, res) => {
+    try {
+        await ActivityLog.deleteMany({});
+        res.json({ message: 'All logs cleared successfully' });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
@@ -262,7 +272,7 @@ const handleAnalyzeRequest = async (req, res) => {
 
         // Convert multer file buffer to base64
         const base64Image = req.file.buffer.toString('base64');
-        
+
         // Robust image saving
         const uploadPath = path.join(uploadDir, 'latest.jpg');
         try {
@@ -287,52 +297,52 @@ const handleAnalyzeRequest = async (req, res) => {
 
         // Try multiple model variants in case of 404 or regional unavailability
         const modelVariants = [
-            'gemini-2.0-flash-exp', 
-            'gemini-1.5-flash', 
-            'gemini-1.5-flash-latest', 
+            'gemini-flash-latest',
+            'gemini-1.5-flash',
+            'gemini-1.5-flash-latest',
             'gemini-1.5-pro',
-            'gemini-pro-vision'
+            'gemini-2.0-flash-exp'
         ];
-        
+
         let lastError = null;
         let responseText = null;
         let successfulModel = null;
 
         for (const modelId of modelVariants) {
             try {
-                console.log(`Attempting Gemini model: ${modelId}...`);
+                console.log(`[AI] Attempting Gemini model: ${modelId}...`);
                 const model = genAI.getGenerativeModel({ model: modelId });
-                
-                // Add a timeout or just try
+
                 const result = await model.generateContent([
-                    { inlineData: { data: base64Image, mimeType: req.file.mimetype } }, 
+                    { inlineData: { data: base64Image, mimeType: req.file.mimetype || 'image/jpeg' } },
                     prompt
                 ]);
-                
+
                 const response = await result.response;
                 responseText = await response.text();
-                
+
                 if (responseText) {
                     successfulModel = modelId;
-                    console.log(`Success with model: ${modelId}`);
+                    console.log(`[AI] Success with model: ${modelId}`);
                     break;
                 }
             } catch (err) {
                 lastError = err;
-                console.warn(`Model ${modelId} failed: ${err.message}`);
+                console.warn(`[AI] Model ${modelId} failed:`, err.message);
+                if (err.response) console.warn(`[AI] Response error details:`, err.response.text ? await err.response.text() : err.response);
             }
         }
 
         if (!responseText) {
             console.error('CRITICAL ERROR: ALL AI MODELS FAILED TO RESPOND');
-            return res.status(503).json({ 
-                error: 'AI Analysis Unavailable', 
-                details: lastError ? lastError.message : 'All Gemini models failed' 
+            return res.status(503).json({
+                error: 'AI Analysis Unavailable',
+                details: lastError ? lastError.message : 'All Gemini models failed'
             });
         }
 
         console.log(`Gemini raw response (via ${successfulModel}):`, responseText);
-        
+
         let analysis;
         try {
             // Robust JSON extraction
@@ -357,9 +367,9 @@ const handleAnalyzeRequest = async (req, res) => {
                 // Update DB
                 await ParkingSlot.findOneAndUpdate(
                     { slotId: targetSlot },
-                    { 
-                        status: newStatus, 
-                        plateNumber: analysis.licensePlate || 'UNKNOWN', 
+                    {
+                        status: newStatus,
+                        plateNumber: analysis.licensePlate || 'UNKNOWN',
                         entryTime: new Date(),
                         lastSeen: new Date()
                     },
