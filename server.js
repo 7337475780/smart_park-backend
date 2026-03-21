@@ -55,8 +55,8 @@ mongoose.connect(process.env.MONGO_URI)
         // Initialize default settings if DB is empty
         const settingsCount = await Settings.countDocuments();
         if (settingsCount === 0) {
-            await new Settings({ totalSlots: 10, fineAmount: 50, hourlyRate: 20 }).save();
-            console.log('Initialized default settings');
+            await new Settings({ totalSlots: 12, fineAmount: 50, hourlyRate: 20 }).save();
+            console.log('Initialized default settings with 12 slots');
         }
 
         // Initialize default admin user if no users exist
@@ -250,16 +250,27 @@ app.get('/api/analyze-parking', (req, res) => {
     res.json({ status: 'API Route /api/analyze-parking is ALIVE (GET)', method: 'POST required for analysis' });
 });
 
-app.post('/api/analyze-parking', upload.single('image'), async (req, res) => {
-    console.log('--- Analyze POST Request Received ---');
+app.get('/api/analyze', (req, res) => {
+    res.redirect('/api/analyze-parking');
+});
+
+const handleAnalyzeRequest = async (req, res) => {
+    console.log(`--- Analyze POST Request Received (${req.path}) ---`);
     try {
         if (!req.file) return res.status(400).json({ error: 'No image provided' });
         if (!process.env.GEMINI_API_KEY) return res.status(500).json({ error: 'GEMINI_API_KEY missing.' });
 
         // Convert multer file buffer to base64
         const base64Image = req.file.buffer.toString('base64');
+        
+        // Robust image saving
         const uploadPath = path.join(uploadDir, 'latest.jpg');
-        fs.writeFileSync(uploadPath, req.file.buffer);
+        try {
+            fs.writeFileSync(uploadPath, req.file.buffer);
+            console.log('Successfully saved latest capture to:', uploadPath);
+        } catch (fsErr) {
+            console.warn('Warning: Could not save image to disk (likely read-only FS). Continuing with buffer analysis.', fsErr.message);
+        }
 
         const prompt = `
       Analyze this image from an AI Smart Parking camera viewing a parking slot.
@@ -268,7 +279,7 @@ app.post('/api/analyze-parking', upload.single('image'), async (req, res) => {
       - "carDetected": boolean (STRICT: true ONLY if a vehicle OR a car-shaped cardboard model is present. If ANY other object is detected like a person, hand, face, or clutter, set to false)
       - "licensePlate": string (read a plate if clearly visible on the car or model, otherwise "")
       - "parkingStatus": string ("good" if parked inside lines, "bad" if across lines, "none" if empty)
-      - "suggestedSlotId": string (The slot ID like "A1", "A2", or "A3" where the camera is pointed)
+      - "suggestedSlotId": string (The slot ID like "A1", "A2", "A3", etc. where the camera is pointed)
       
       Return ONLY valid JSON. Keep it raw without any markdown wrapping.
       Example: {"carDetected": true, "licensePlate": "AB1234", "parkingStatus": "good", "suggestedSlotId": "A1"}
@@ -280,48 +291,63 @@ app.post('/api/analyze-parking', upload.single('image'), async (req, res) => {
             'gemini-1.5-flash', 
             'gemini-1.5-flash-latest', 
             'gemini-1.5-pro',
-            'gemini-pro-vision',
-            'gemini-1.0-pro-vision-latest'
+            'gemini-pro-vision'
         ];
+        
         let lastError = null;
         let responseText = null;
+        let successfulModel = null;
 
         for (const modelId of modelVariants) {
             try {
-                console.log(`Trying model: ${modelId}...`);
+                console.log(`Attempting Gemini model: ${modelId}...`);
                 const model = genAI.getGenerativeModel({ model: modelId });
-                const result = await model.generateContent([{ inlineData: { data: base64Image, mimeType: req.file.mimetype } }, prompt]);
+                
+                // Add a timeout or just try
+                const result = await model.generateContent([
+                    { inlineData: { data: base64Image, mimeType: req.file.mimetype } }, 
+                    prompt
+                ]);
+                
                 const response = await result.response;
                 responseText = await response.text();
+                
                 if (responseText) {
+                    successfulModel = modelId;
                     console.log(`Success with model: ${modelId}`);
                     break;
                 }
             } catch (err) {
                 lastError = err;
                 console.warn(`Model ${modelId} failed: ${err.message}`);
-                // We don't break here any more, we try all of them to be 100% sure
             }
         }
 
         if (!responseText) {
-            console.error('CRITICAL: ALL MODELS FAILED');
-            throw lastError || new Error('All Gemini models returned failure.');
+            console.error('CRITICAL ERROR: ALL AI MODELS FAILED TO RESPOND');
+            return res.status(503).json({ 
+                error: 'AI Analysis Unavailable', 
+                details: lastError ? lastError.message : 'All Gemini models failed' 
+            });
         }
 
-        console.log('Gemini raw response:', responseText);
+        console.log(`Gemini raw response (via ${successfulModel}):`, responseText);
         
         let analysis;
         try {
-            const cleanJson = responseText.replace(/```json\n?/, '').replace(/```\n?/, '').trim();
+            // Robust JSON extraction
+            const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+            const cleanJson = jsonMatch ? jsonMatch[0] : responseText.replace(/```json\n?/, '').replace(/```\n?/, '').trim();
             analysis = JSON.parse(cleanJson);
         } catch (parseError) {
             console.error('Failed to parse Gemini JSON:', responseText);
-            throw new Error(`Invalid AI response format: ${parseError.message}`);
+            return res.status(500).json({ error: 'Invalid AI response format', details: parseError.message });
         }
 
+        // Apply analysis to database
         if (mongoose.connection.readyState === 1) {
             const targetSlot = analysis.suggestedSlotId || 'A1';
+            console.log(`Applying analysis for slot: ${targetSlot}`);
 
             if (analysis.carDetected) {
                 let newStatus = analysis.parkingStatus === 'bad' ? 'fined' : 'occupied';
@@ -331,7 +357,13 @@ app.post('/api/analyze-parking', upload.single('image'), async (req, res) => {
                 // Update DB
                 await ParkingSlot.findOneAndUpdate(
                     { slotId: targetSlot },
-                    { status: newStatus, plateNumber: analysis.licensePlate || 'UNKNOWN', entryTime: new Date() }
+                    { 
+                        status: newStatus, 
+                        plateNumber: analysis.licensePlate || 'UNKNOWN', 
+                        entryTime: new Date(),
+                        lastSeen: new Date()
+                    },
+                    { upsert: true }
                 );
 
                 // Record Log
@@ -345,13 +377,13 @@ app.post('/api/analyze-parking', upload.single('image'), async (req, res) => {
                 // No car detected - register as EXIT if it was previously occupied or fined
                 const slot = await ParkingSlot.findOne({ slotId: targetSlot });
                 if (slot && (slot.status === 'occupied' || slot.status === 'fined')) {
-                    const settings = await Settings.findOne() || { hourlyRate: 20 };
+                    const currentSettings = await Settings.findOne() || { hourlyRate: 20 };
                     const entryTime = slot.entryTime || new Date();
                     const now = new Date();
                     const durationMs = now - entryTime;
                     // Round up to nearest hour, minimum 1 hour
                     const durationHours = Math.max(1, Math.ceil(durationMs / (1000 * 60 * 60)));
-                    const amount = durationHours * settings.hourlyRate;
+                    const amount = durationHours * currentSettings.hourlyRate;
 
                     await ParkingSlot.findOneAndUpdate(
                         { slotId: targetSlot },
@@ -367,15 +399,20 @@ app.post('/api/analyze-parking', upload.single('image'), async (req, res) => {
                     }).save();
                 }
             }
+        } else {
+            console.warn('Warning: Database disconnected, skipping DB updates but returning analysis.');
         }
 
-        res.json(analysis);
+        res.json({ ...analysis, modelUsed: successfulModel });
 
     } catch (error) {
-        console.error('Error in analyze-parking:', error);
-        res.status(500).json({ error: 'Failed to analyze the image', details: error.message });
+        console.error('Unified analysis error:', error);
+        res.status(500).json({ error: 'Vision Analysis Pipeline Failure', details: error.message });
     }
-});
+};
+
+app.post('/api/analyze-parking', upload.single('image'), handleAnalyzeRequest);
+app.post('/api/analyze', upload.single('image'), handleAnalyzeRequest);
 
 app.listen(port, () => {
     console.log(`Server listening at http://localhost:${port}`);
