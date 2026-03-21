@@ -116,6 +116,30 @@ app.get('/api/status', checkDb, async (req, res) => {
 });
 
 // Update a slot (Used by frontend Manual Simulator / Booking)
+app.post('/api/slots/:id/clear', checkDb, async (req, res) => {
+    try {
+        const { id } = req.params;
+        const slot = await ParkingSlot.findOne({ slotId: id });
+        if (!slot) return res.status(404).json({ error: 'Slot not found' });
+
+        await ParkingSlot.findOneAndUpdate(
+            { slotId: id },
+            { status: 'available', plateNumber: null, entryTime: null, lastSeen: null }
+        );
+
+        await new ActivityLog({
+            event: 'ADMIN: SLOT CLEARED',
+            plateNumber: slot.plateNumber || 'N/A',
+            slotId: id,
+            details: 'Slot manually reset by administrator'
+        }).save();
+
+        res.json({ message: 'Slot cleared successfully' });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 app.post('/api/slots/:id', checkDb, async (req, res) => {
     try {
         const { id } = req.params;
@@ -254,6 +278,21 @@ app.post('/api/users/:id/role', checkDb, async (req, res) => {
         res.status(500).json({ error: err.message });
     }
 });
+
+app.delete('/api/users/:id', checkDb, async (req, res) => {
+    try {
+        const { id } = req.params;
+        const user = await User.findById(id);
+        if (!user) return res.status(404).json({ error: 'User not found' });
+        if (user.username === 'admin') return res.status(403).json({ error: 'Default admin cannot be deleted' });
+
+        await User.findByIdAndDelete(id);
+        res.json({ message: 'User deleted successfully' });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 
 // --- GEMINI ENDPOINT ---
 
