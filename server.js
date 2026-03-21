@@ -67,6 +67,8 @@ mongoose.connect(process.env.MONGO_URI)
         }
     }).catch(err => console.error('MongoDB connection error:', err));
 
+console.log('--- AI Smart Parking Server Started (v2.1 - Admin Features Active) ---');
+
 // Wait for DB utility
 const checkDb = (req, res, next) => {
     if (mongoose.connection.readyState !== 1) {
@@ -74,6 +76,16 @@ const checkDb = (req, res, next) => {
     }
     next();
 };
+
+// Diagnostic Route
+app.get('/api/admin-check', (req, res) => {
+    res.json({ 
+        status: 'online', 
+        version: '2.1', 
+        message: 'Admin endpoints are active',
+        timestamp: new Date()
+    });
+});
 
 // --- DATA ENDPOINTS ---
 
