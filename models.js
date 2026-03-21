@@ -21,7 +21,8 @@ const ActivityLogSchema = new mongoose.Schema({
 const SettingsSchema = new mongoose.Schema({
   totalSlots: { type: Number, default: 12 },
   fineAmount: { type: Number, default: 50 },
-  hourlyRate: { type: Number, default: 20 }
+  hourlyRate: { type: Number, default: 20 },
+  streamUrl: { type: String, default: '' }
 });
 
 const UserSchema = new mongoose.Schema({

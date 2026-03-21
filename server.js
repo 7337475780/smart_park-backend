@@ -161,6 +161,7 @@ app.post('/api/settings', checkDb, async (req, res) => {
         if (totalSlots !== undefined && totalSlots !== null) settings.totalSlots = totalSlots;
         if (fineAmount !== undefined && fineAmount !== null) settings.fineAmount = fineAmount;
         if (hourlyRate !== undefined && hourlyRate !== null) settings.hourlyRate = hourlyRate;
+        if (req.body.streamUrl !== undefined) settings.streamUrl = req.body.streamUrl;
         await settings.save();
 
         if (totalSlots !== undefined && totalSlots !== null) {
